@@ -47,23 +47,26 @@ function handle_special_texture(json) {
 //   * `null` otherwise
 function handle_special_geometry(geom) {
     if (geom.type == "_meshfile") {
+        var path = ( geom.url === undefined ) ? null : THREE.LoaderUtils.extractUrlBase( geom.url );
         if (geom.format == "obj") {
             let loader = new THREE.OBJLoader2();
-            let obj = loader.parse(geom.data + "\n");
+            let obj = loader.parse(geom.data + "\n", path);
             let loaded_geom = obj.children[0].geometry;
             loaded_geom.uuid = geom.uuid;
             return loaded_geom;
         } else if (geom.format == "dae") {
             let loader = new THREE.ColladaLoader();
-            let obj = loader.parse(geom.data);
+            let obj = loader.parse(geom.data, path);
             let loaded_geom = obj.scene.children[0].geometry;
+            loaded_geom.material = obj.scene.children[0].material; // Store collada material
             loaded_geom.uuid = geom.uuid;
             return loaded_geom;
         } else if (geom.format == "stl") {
             let loader = new THREE.STLLoader();
-            let loaded_geom = loader.parse(geom.data.buffer);
+            let loaded_geom = loader.parse(geom.data.buffer, path);
             loaded_geom.uuid = geom.uuid;
             return loaded_geom;
+
         } else {
             console.error("Unsupported mesh type:", geom);
             return null;
@@ -686,7 +689,11 @@ class Viewer {
         let loader = new ExtensibleObjectLoader();
         loader.parse(object_json, (obj) => {
             if (obj.geometry.type == "BufferGeometry") {
-                obj.geometry.computeVertexNormals();
+                if(! 'normal' in obj.geometry.attributes || obj.geometry.attributes.normal.count==0)
+                    obj.geometry.computeVertexNormals();
+            }
+            if ('material' in obj.geometry) {
+                obj.material = obj.geometry.material;
             }
             obj.castShadow = true;
             obj.receiveShadow = true;
