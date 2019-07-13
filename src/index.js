@@ -7,6 +7,7 @@ require('imports-loader?THREE=three!./ColladaLoader.js');
 require('imports-loader?THREE=three!./STLLoader.js');
 require('imports-loader?THREE=three!./OrbitControls.js');
 require('ccapture.js');
+require('imports-loader?THREE=three!./BufferGeometryUtils.js'); 
 
 // Handler for special texture types that we want to support
 // in addition to whatever three.js supports. This function
@@ -47,7 +48,7 @@ function handle_special_texture(json) {
 //   * `null` otherwise
 function handle_special_geometry(geom) {
     if (geom.type == "_meshfile") {
-        var path = ( geom.url === undefined ) ? null : THREE.LoaderUtils.extractUrlBase( geom.url );
+        let path = ( geom.url === undefined ) ? null : THREE.LoaderUtils.extractUrlBase( geom.url );
         if (geom.format == "obj") {
             let loader = new THREE.OBJLoader2();
             let obj = loader.parse(geom.data + "\n", path);
@@ -56,11 +57,36 @@ function handle_special_geometry(geom) {
             return loaded_geom;
         } else if (geom.format == "dae") {
             let loader = new THREE.ColladaLoader();
-            let obj = loader.parse(geom.data, path);
-            let loaded_geom = obj.scene.children[0].geometry;
-            loaded_geom.material = obj.scene.children[0].material; // Store collada material
-            loaded_geom.uuid = geom.uuid;
-            return loaded_geom;
+            let obj = loader.parse(new TextDecoder("utf-8").decode(geom.data), path);
+            let materials = [];
+            let geometries = [];
+            let root_transform = new THREE.Matrix4();
+            function collectGeometries(node, parent_transform) {
+                let transform = parent_transform.multiply(node.matrix);
+                if (node.type==='Mesh') {
+                    node.geometry.applyMatrix(transform);
+                    geometries.push(node.geometry);
+                    materials.push(node.material)
+                }             
+                if (node.children.length>0) {
+                    for (let child of node.children) {
+                        collectGeometries(child, transform);
+                    }
+                }
+            }
+            collectGeometries(obj.scene, root_transform);
+            let singleGeometry = null;
+            if (geometries.length == 1) {
+                singleGeometry =  geometries[0];
+                singleGeometry.material = materials[0];
+            } else if (geometries.length > 1) {
+                singleGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(geometries, true);
+                singleGeometry.material = materials;
+            } else {
+                singleGeometry = new THREE.BufferGeometry();
+            }
+            singleGeometry.uuid = geom.uuid;
+            return singleGeometry;
         } else if (geom.format == "stl") {
             let loader = new THREE.STLLoader();
             let loaded_geom = loader.parse(geom.data.buffer, path);
@@ -689,12 +715,12 @@ class Viewer {
         let loader = new ExtensibleObjectLoader();
         loader.parse(object_json, (obj) => {
             if (obj.geometry.type == "BufferGeometry") {
-                if(! 'normal' in obj.geometry.attributes || obj.geometry.attributes.normal.count==0)
+                if(! 'normal' in obj.geometry.attributes || ('normal' in obj.geometry.attributes && obj.geometry.attributes.normal.count===0))
                     obj.geometry.computeVertexNormals();
             }
             if ('material' in obj.geometry) {
                 obj.material = obj.geometry.material;
-            }
+            }    
             obj.castShadow = true;
             obj.receiveShadow = true;
             this.set_object(path, obj);
