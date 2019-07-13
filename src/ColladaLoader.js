@@ -3822,6 +3822,11 @@ THREE.ColladaLoader.prototype = {
 
 		var xml = new DOMParser().parseFromString( text, 'application/xml' );
 
+		if ( typeof xml.getElementsByTagName("parsererror")[0] !== 'undefined' ) {
+			// Fail gracefully when XML parsing fails
+			return { scene: new THREE.Scene() };
+		}
+
 		var collada = getElementsByTagName( xml, 'COLLADA' )[ 0 ];
 
 		// metadata
